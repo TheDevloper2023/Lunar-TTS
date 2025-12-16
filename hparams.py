@@ -2,10 +2,40 @@ import tensorflow as tf
 from text.symbols import symbols
 
 
+class HParams(object):
+    hparamdict = []
+    def __init__(self, **hparams):
+        self.hparamdict = hparams
+        for k, v in hparams.items():
+            setattr(self, k, v)
+    def __repr__(self):
+        return "HParams(" + repr([(k, v) for k, v in self.hparamdict.items()]) + ")"
+    def __str__(self):
+        return ','.join([(k + '=' + str(v)) for k, v in self.hparamdict.items()])
+    def parse(self, params):
+        for s in params.split(","):
+            k, v = s.split("=", 1)
+            k = k.strip()
+            t = type(self.hparamdict[k])
+            if t == bool:
+                v = v.strip().lower()
+                if v in ['true', '1']:
+                    v = True
+                elif v in ['false', '0']:
+                    v = False
+                else:
+                    raise ValueError(v)
+            else:
+                v = t(v)
+            self.hparamdict[k] = v
+            setattr(self, k, v)
+        return self
+
+
 def create_hparams(hparams_string=None, verbose=False):
     """Create model hyperparameters. Parse nondefault from given string."""
 
-    hparams = tf.contrib.training.HParams(
+    hparams = HParams(
         ################################
         # Experiment Parameters        #
         ################################
@@ -41,8 +71,6 @@ def create_hparams(hparams_string=None, verbose=False):
         n_mel_channels=80,
         mel_fmin=0.0,
         mel_fmax=8000.0,
-        f0_min=80,      # deprecated
-        f0_max=880,     # deprecated
         harm_thresh=0.25,
 
         ################################
@@ -60,16 +88,11 @@ def create_hparams(hparams_string=None, verbose=False):
         n_frames_per_step=1,  # currently only 1 is supported
         decoder_rnn_dim=1024,
         prenet_dim=256,
-        prenet_f0_n_layers=1,      # deprecated
-        prenet_f0_dim=1,           # deprecated
-        prenet_f0_kernel_size=1,   # deprecated
-        prenet_rms_dim=0,          # deprecated
-        prenet_rms_kernel_size=1,  # deprecated
         max_decoder_steps=1000,
         gate_threshold=0.5,
         p_attention_dropout=0.1,
         p_decoder_dropout=0.1,
-        p_teacher_forcing=1.0,     # deprecated
+        p_teacher_forcing=1.0,     # TODO: Re-add it from Mellotron
 
         # Attention parameters
         attention_rnn_dim=1024,
@@ -84,9 +107,9 @@ def create_hparams(hparams_string=None, verbose=False):
         postnet_kernel_size=5,
         postnet_n_convolutions=5,
 
-        # Speaker embedding          # deprecated
-        n_speakers=123,              # deprecated
-        speaker_embedding_dim=128,   # deprecated
+        # Speaker embedding          # TODO: Re-add it from Mellotron
+        n_speakers=123,              
+        speaker_embedding_dim=128,   
 
         # Reference encoder
         # with_gst=True,

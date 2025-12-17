@@ -36,7 +36,7 @@ class TPGSTTacotron2:
             raise ValueError(f"invalid tpgst_mode {tpgst_mode}, available modes are {availbe_modes}")
 
 
-        sequence = np.array(text_to_sequence(text, ['english_cleaners'], arpabet=arpabet))[None, :]
+        sequence = np.array(text_to_sequence(text, ['english_cleaners'], p_arpabet=arpabet))[None, :]
         sequence = torch.from_numpy(sequence).to(device='cuda', dtype=torch.int64)
         
         #predict emotion embedding
@@ -49,7 +49,7 @@ class TPGSTTacotron2:
     def infer_ref_audio(self, text, ref_audio, arpabet = True): #Boring method, who is going to use it?
         arpabet = 1.0 if arpabet else 0.0
         ref_mel = self.load_mel(ref_audio)
-        sequence = np.array(text_to_sequence(text, ['english_cleaners']))[None, :]
+        sequence = np.array(text_to_sequence(text, ['english_cleaners'], p_arpabet=arpabet))[None, :]
         sequence = torch.from_numpy(sequence).to(device='cuda', dtype=torch.int64)
 
         mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, ref_mel))

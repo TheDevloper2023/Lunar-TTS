@@ -1,15 +1,10 @@
 import random
-import os
-import re
-import numpy as np
 import torch
 import torch.utils.data
-import librosa
 
 import layers
 from utils import load_wav_to_torch, load_filepaths_and_text
 from text import text_to_sequence, cmudict
-from yin import compute_yin
 
 
 class TextMelLoader(torch.utils.data.Dataset):

@@ -145,9 +145,9 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
         val_loss = 0.0
         for i, batch in enumerate(val_loader):
             x, y = model.parse_batch(batch)
-            text_padded, input_lengths, mel_padded, max_len, output_lengths, raw_text = x
+            text_padded, input_lengths, mel_padded, max_len, output_lengths, raw_text, *_ = x
             y_pred = model(x)
-            mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output = y_pred
+            mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output, *_ = y_pred
             # TP-GST
             tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output
 
@@ -244,9 +244,9 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
 
             model.zero_grad()
             x, y = model.parse_batch(batch)
-            text_padded, input_lengths, mel_padded, max_len, output_lengths, raw_text = x
+            text_padded, input_lengths, mel_padded, max_len, output_lengths, raw_text, *_ = x
             y_pred = model(x)
-            mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output = y_pred
+            mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output, *_ = y_pred
 
             # TP-GST
             tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output

@@ -83,16 +83,23 @@ class GuidedAttentionLoss(torch.nn.Module):
         n_batches = ilens.shape[0]
         max_ilen = int(ilens.max().item())
         max_olen = int(olens.max().item())
-        guided_attn_masks = torch.zeros((n_batches, max_olen, max_ilen))
+        device = ilens.device  # Get device from input lengths
+        guided_attn_masks = torch.zeros((n_batches, max_olen, max_ilen), device=device)
         for idx, (ilen, olen) in enumerate(zip(ilens, olens)):
-            guided_attn_masks[idx, :olen, :ilen] = self._make_guided_attention_mask(ilen, olen, self.sigma)
+            guided_attn_masks[idx, :olen, :ilen] = self._make_guided_attention_mask(
+                ilen.item(), olen.item(), self.sigma, device
+            )
         return guided_attn_masks
 
     @staticmethod
-    def _make_guided_attention_mask(ilen, olen, sigma):
-
-        grid_x, grid_y = torch.meshgrid(torch.arange(olen), torch.arange(ilen), indexing='ij')
-        grid_x, grid_y = grid_x.float(), grid_y.float()
+    def _make_guided_attention_mask(ilen, olen, sigma, device):  # Add device argument
+        grid_x, grid_y = torch.meshgrid(
+            torch.arange(olen, device=device),
+            torch.arange(ilen, device=device),
+            indexing='ij'
+        )
+        grid_x = grid_x.float()
+        grid_y = grid_y.float()
         return 1.0 - torch.exp(-(grid_y / ilen - grid_x / olen) ** 2 / (2 * (sigma ** 2)))
 
     @staticmethod

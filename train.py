@@ -155,7 +155,9 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
             loss_tpse = criterion_tpse(tpse_output, embedded_gst)
             loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
 
-            loss = criterion(y_pred, y, alignments, input_lengths, output_lengths)
+            tacotron_outputs = (mel_out, mel_out_postnet, gate_out, alignments)
+
+            loss = criterion(tacotron_outputs, y, input_lengths, output_lengths)
             loss = loss + loss_tpcw + loss_tpse + loss_tpse_l
 
             if distributed_run:
@@ -254,8 +256,8 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
             loss_tpcw = criterion_tpcw(tpcw_output, scores_gst)
             loss_tpse = criterion_tpse(tpse_output, embedded_gst)
             loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
-
-            loss = criterion(y_pred, y, input_lengths, output_lengths)
+            tacotron_outputs = (mel_out, mel_out_postnet, gate_out, alignments)
+            loss = criterion(tacotron_outputs, y, input_lengths, output_lengths)
             loss = loss + loss_tpcw + loss_tpse + loss_tpse_l
 
             if hparams.distributed_run:

@@ -156,6 +156,14 @@ def create_hparams(hparams_string=None, verbose=False):
         batch_size=32,
         mask_padding=True,  # set model's padded outputs to padded values
 
+        ################################
+        # Guided Attention             #
+        ################################
+        use_guided_attention = True,
+        guided_attention_sigma=0.2,
+        guided_attention_weight=1.0,
+
+
     )
 
     if hparams_string:

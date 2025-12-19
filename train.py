@@ -178,8 +178,8 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
         print("Validation loss {}: {:9f}  ".format(iteration, reduced_val_loss))
         logger.log_validation(val_loss, model, y, y_pred, iteration)
     
-
-    att_mat = get_alignment_metrics(alignments=alignments, average_across_batch=True, input_lengths=batch["input_lengths"], output_lengths=batch['mel_lengths'])
+    
+    att_mat = get_alignment_metrics(alignments=alignments, average_across_batch=True, input_lengths=x[1], output_length=x[2])
 
     avg_max_attn = att_mat["max"]
     att_diag = att_mat["diagonalness"]

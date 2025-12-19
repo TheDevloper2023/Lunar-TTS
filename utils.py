@@ -47,27 +47,43 @@ def to_gpu(x):
         x = x.cuda(non_blocking=True)
     return torch.autograd.Variable(x)
 
+def get_alignment_metrics( #From Uberduck
+    alignments, average_across_batch=True, input_lengths=None, output_lengths=None
+):
+    alignments = alignments.transpose(1, 2)  # [B, dec, enc] -> [B, enc, dec]
+    if input_lengths == None:
+        input_lengths = torch.ones(alignments.size(0), device=alignments.device) * (
+            alignments.shape[1] - 1
+        )  # [B] # 147
+    if output_lengths == None:
+        output_lengths = torch.ones(alignments.size(0), device=alignments.device) * (
+            alignments.shape[2] - 1
+        )  # [B] # 767
 
-"""
-for i, batch in enumerate(val_loader):
-            x, y = model.parse_batch(batch)
-            text_padded, input_lengths, mel_padded, max_len, output_lengths, raw_text = x
-            y_pred = model(x)
-            mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output = y_pred
-            # TP-GST
-            tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output
+    batch_size = alignments.size(0)
+    optimums = torch.sqrt(
+        input_lengths.double().pow(2) + output_lengths.double().pow(2)
+    ).view(batch_size)
 
-            loss_tpcw = criterion_tpcw(tpcw_output, scores_gst)
-            loss_tpse = criterion_tpse(tpse_output, embedded_gst)
-            loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
+    # [B, enc, dec] -> [B, dec], [B, dec]
+    values, cur_idxs = torch.max(alignments, 1)
 
-            loss = criterion(y_pred, y, alignments, input_lengths, output_lengths)
-            loss = loss + loss_tpcw + loss_tpse + loss_tpse_l
+    cur_idxs = cur_idxs.float()
+    prev_indx = torch.cat((cur_idxs[:, 0][:, None], cur_idxs[:, :-1]), dim=1)
+    dist = ((prev_indx - cur_idxs).pow(2) + 1).pow(0.5)  # [B, dec]
+    dist.masked_fill_(
+        ~get_mask_from_lengths(output_lengths, max_len=dist.size(1)), 0.0
+    )  # set dist of padded to zero
+    dist = dist.sum(dim=(1))  # get total dist for each B
+    diagonalness = (dist + 1.4142135) / optimums  # dist / optimal dist
 
-            if distributed_run:
-                reduced_val_loss = reduce_tensor(loss.data, n_gpus).item()
-            else:
-                reduced_val_loss = loss.item()
-            val_loss += reduced_val_loss
-        val_loss = val_loss / (i + 1)
-        """
+    maxes = alignments.max(axis=1)[0].mean(axis=1)
+    if average_across_batch:
+        diagonalness = diagonalness.mean()
+        maxes = maxes.mean()
+
+    output = {}
+    output["diagonalness"] = diagonalness
+    output["max"] = maxes
+
+    return output

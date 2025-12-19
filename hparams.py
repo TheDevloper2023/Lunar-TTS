@@ -36,9 +36,9 @@ def create_hparams(hparams_string=None, verbose=False):
     """Create model hyperparameters. Parse nondefault from given string."""
 
     hparams = HParams(
-        ################################
+        #==============================#
         # Experiment Parameters        #
-        ################################
+        #==============================#
         epochs=500,
         iters_per_checkpoint=500,
         seed=1234,
@@ -51,18 +51,30 @@ def create_hparams(hparams_string=None, verbose=False):
         cudnn_benchmark=False,
         ignore_layers=['embedding.weight'],
 
-        ################################
+
+        #==============================#
+        # Checkpoint Saving            #
+        #==============================#
+
+        save_best_validation = True,  # Save the model with the lowest combined validation loss (Tacotron2 + GST losses)
+        save_best_attsc = True,      # Save the model with the highest attention score (best alignment quality)
+        save_best_gst = True,      # Save the model with the lowest GST/style loss (TPSE + TPSE Linear + TPCW)
+        best_best_taco = True,      # Save the model with the lowest Tacotron2 validation loss (reconstruction loss only)
+
+
+
+        #==============================#
         # Data Parameters             #
-        ################################
+        #==============================#
         training_files='filelists/ljs_audiopaths_text_sid_train_filelist.txt',
         validation_files='filelists/ljs_audiopaths_text_sid_val_filelist.txt',
         text_cleaners=['english_cleaners'],
         p_arpabet=1.0,
         cmudict_path=None,
 
-        ################################
+        #==============================#
         # Audio Parameters             #
-        ################################
+        #==============================#
         max_wav_value=32768.0,
         sampling_rate=22050,
         filter_length=1024,
@@ -73,9 +85,9 @@ def create_hparams(hparams_string=None, verbose=False):
         mel_fmax=8000.0,
         harm_thresh=0.25,
 
-        ################################
+        #==============================#
         # Model Parameters             #
-        ################################
+        #==============================#
         n_symbols=len(symbols),
         symbols_embedding_dim=512,
 
@@ -144,21 +156,28 @@ def create_hparams(hparams_string=None, verbose=False):
         bert_load_from_checkpoint=False,
         bert_train=False,
 
-        ################################
+        #==============================#
         # Optimization Hyperparameters #
-        ################################
+        #==============================#
         use_saved_learning_rate=False,
         learning_rate=1e-3,
         learning_rate_min=1e-5,
         learning_rate_anneal=50000,
         weight_decay=1e-6,
         grad_clip_thresh=1.0,
+
         batch_size=32,
+        val_batch_size = 16
+        num_workers = 4
+        val_num_workers = 4
+
+        pin_worker = False
+        val_pin_worker = False
         mask_padding=True,  # set model's padded outputs to padded values
 
-        ################################
+        #==============================#
         # Guided Attention             #
-        ################################
+        #==============================#
         use_guided_attention = True,
         guided_attention_sigma=0.2,
         guided_attention_weight=1.0,

@@ -480,10 +480,3 @@ def get_data_from_musicxml(filepath, bpm, phoneme_durations=None,
     return data
 
 
-if __name__ == "__main__":
-    import argparse
-    # Get defaults so it can work with no Sacred
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-f', "--filepath", required=True)
-    args = parser.parse_args()
-    get_data_from_musicxml(args.filepath, 60)

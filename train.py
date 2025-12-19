@@ -147,20 +147,19 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
         taco_val_loss = 0.0
         for i, batch in enumerate(val_loader):
             x, y = model.parse_batch(batch)
+            text_padded, input_lengths, mel_padded, max_len, output_lengths, raw_text, *_ = x
             y_pred = model(x)
-            _, mel_out_postnet, gate_outputs, alignments, *_ = y_pred
-
-
+            mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output, *_ = y_pred
             # TP-GST
-            tp_gst_output = y_pred.pop()
             tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output
 
             loss_tpcw = criterion_tpcw(tpcw_output, scores_gst)
             loss_tpse = criterion_tpse(tpse_output, embedded_gst)
             loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
 
-            loss = criterion(y_pred, y)
-            taco_loss = loss
+            tacotron_outputs = (mel_out, mel_out_postnet, gate_out, alignments)
+
+            loss = criterion(tacotron_outputs, y, input_lengths, output_lengths)
             loss = loss + loss_tpcw + loss_tpse + loss_tpse_l
 
             if distributed_run:
@@ -225,7 +224,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     if hparams.distributed_run:
         model = apply_gradient_allreduce(model)
 
-    criterion = Tacotron2Loss()
+    criterion = Tacotron2Loss(hparams=hparams)
     criterion_tpse = TPSELoss()
     criterion_tpcw = TPCWLoss()
 
@@ -271,17 +270,18 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
 
             model.zero_grad()
             x, y = model.parse_batch(batch)
+            text_padded, input_lengths, mel_padded, max_len, output_lengths, raw_text, *_ = x
             y_pred = model(x)
+            mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output, *_ = y_pred
 
             # TP-GST
-            tp_gst_output = y_pred.pop()
             tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output
 
             loss_tpcw = criterion_tpcw(tpcw_output, scores_gst)
             loss_tpse = criterion_tpse(tpse_output, embedded_gst)
             loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
-
-            loss = criterion(y_pred, y)
+            tacotron_outputs = (mel_out, mel_out_postnet, gate_out, alignments)
+            loss = criterion(tacotron_outputs, y, input_lengths, output_lengths)
             loss = loss + loss_tpcw + loss_tpse + loss_tpse_l
 
             if hparams.distributed_run:

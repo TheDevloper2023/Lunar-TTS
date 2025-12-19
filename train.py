@@ -15,6 +15,7 @@ from data_utils import TextMelLoader, TextMelCollate
 from loss_function import Tacotron2Loss, TPCWLoss, TPSELoss
 from logger import Tacotron2Logger
 from hparams import create_hparams
+from utils import get_alignment_metrics
 
 
 def reduce_tensor(tensor, n_gpus):
@@ -52,9 +53,9 @@ def prepare_dataloaders(hparams):
         train_sampler = None
         shuffle = True
 
-    train_loader = DataLoader(trainset, num_workers=1, shuffle=shuffle,
+    train_loader = DataLoader(trainset, num_workers=hparams.num_workers, shuffle=shuffle,
                               sampler=train_sampler,
-                              batch_size=hparams.batch_size, pin_memory=False,
+                              batch_size=hparams.batch_size, pin_memory=hparams.pin_worker,
                               drop_last=True, collate_fn=collate_fn)
     return train_loader, valset, collate_fn, train_sampler
 
@@ -137,15 +138,18 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
     model.eval()
     with torch.no_grad():
         val_sampler = DistributedSampler(valset) if distributed_run else None
-        val_loader = DataLoader(valset, sampler=val_sampler, num_workers=1,
+        val_loader = DataLoader(valset, sampler=val_sampler, num_workers=hparams.val_num_workers,
                                 shuffle=False, batch_size=batch_size,
-                                pin_memory=False, collate_fn=collate_fn)
+                                pin_memory=hparams.val_pin_worker, collate_fn=collate_fn)
 
         criterion, criterion_tpcw, criterion_tpse = criterions
         val_loss = 0.0
+        taco_val_loss = 0.0
         for i, batch in enumerate(val_loader):
             x, y = model.parse_batch(batch)
             y_pred = model(x)
+            _, mel_out_postnet, gate_outputs, alignments, *_ = y_pred
+
 
             # TP-GST
             tp_gst_output = y_pred.pop()
@@ -156,19 +160,37 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
             loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
 
             loss = criterion(y_pred, y)
+            taco_loss = loss
             loss = loss + loss_tpcw + loss_tpse + loss_tpse_l
 
             if distributed_run:
                 reduced_val_loss = reduce_tensor(loss.data, n_gpus).item()
+                reduced_val_loss_taco = reduce_tensor(taco_loss.data, n_gpus).item()
             else:
                 reduced_val_loss = loss.item()
+                reduced_val_loss_taco = taco_loss.item()
             val_loss += reduced_val_loss
+            taco_val_loss = reduced_val_loss_taco
         val_loss = val_loss / (i + 1)
+        taco_val_loss /= (i + 1)
 
     model.train()
     if rank == 0:
         print("Validation loss {}: {:9f}  ".format(iteration, reduced_val_loss))
         logger.log_validation(val_loss, model, y, y_pred, iteration)
+    
+
+    att_mat = get_alignment_metrics(alignments=alignments, average_across_batch=True, input_lengths=batch["input_lengths"], output_lengths=batch['mel_lengths'])
+
+    avg_max_attn = att_mat["max"]
+    att_diag = att_mat["diagonalness"]
+
+    att_score = avg_max_attn - att_diag
+
+
+    style_loss = loss_tpcw + loss_tpse + loss_tpse_l
+
+    return val_loss, att_score, style_loss, taco_val_loss
 
 
 def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
@@ -226,6 +248,11 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 learning_rate = _learning_rate
             iteration += 1  # next iteration is iteration + 1
             epoch_offset = max(0, int(iteration / len(train_loader)))
+    
+    best_val_loss = 1e3
+    best_attsc_loss = 9e9
+    best_gst_loss = 1e3
+    best_tv_loss = 1e3
 
     model.train()
     is_overflow = False
@@ -286,14 +313,42 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                     reduced_loss, grad_norm, learning_rate, duration, iteration)
 
             if not is_overflow and (iteration % hparams.iters_per_checkpoint == 0):
-                validate(model, (criterion, criterion_tpcw, criterion_tpse), valset, iteration,
-                        hparams.batch_size, n_gpus, collate_fn, logger,
+                val_loss, att_score, style_loss, taco_val_loss = validate(model, (criterion, criterion_tpcw, criterion_tpse), valset, iteration,
+                        hparams.val_batch_size, n_gpus, collate_fn, logger,
                         hparams.distributed_run, rank)
                 if rank == 0:
                     checkpoint_path = os.path.join(
                         output_directory, "checkpoint_{}".format(iteration))
                     save_checkpoint(model, optimizer, learning_rate, iteration,
                                     checkpoint_path, hparams.bert_save_in_checkpoint)
+                    
+                    if val_loss < best_val_loss and hparams.save_best_validation:
+                        best_val_loss = val_loss
+                        checkpoint_path = os.path.join(
+                        output_directory, "best_val_style__taco")
+                        save_checkpoint(model, optimizer, learning_rate, iteration,
+                                        checkpoint_path, hparams.bert_save_in_checkpoint)
+                    if att_score > best_attsc_loss and hparams.save_best_attsc:
+                        best_attsc_loss = att_score
+                        checkpoint_path = os.path.join(
+                        output_directory, "best_inf_attsc")
+                        save_checkpoint(model, optimizer, learning_rate, iteration,
+                                        checkpoint_path, hparams.bert_save_in_checkpoint)
+                    
+                    if style_loss < best_gst_loss and hparams.save_best_gst:
+                        best_gst_loss = style_loss
+                        checkpoint_path = os.path.join(
+                        output_directory, "best__val_style_model")
+                        save_checkpoint(model, optimizer, learning_rate, iteration,
+                                        checkpoint_path, hparams.bert_save_in_checkpoint)
+                    if best_tv_loss > taco_val_loss and hparams.best_best_taco:
+                        best_tv_loss = taco_val_loss
+                        checkpoint_path = os.path.join(
+                        output_directory, "best_val_taco_model")
+                        save_checkpoint(model, optimizer, learning_rate, iteration,
+                                        checkpoint_path, hparams.bert_save_in_checkpoint)
+                        
+                        
 
             iteration += 1
 

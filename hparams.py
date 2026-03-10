@@ -1,6 +1,5 @@
-import tensorflow as tf
 from text.symbols import symbols
-
+#import tensorflow as tf
 
 class HParams(object):
     hparamdict = []
@@ -40,16 +39,26 @@ def create_hparams(hparams_string=None, verbose=False):
         # Experiment Parameters        #
         #==============================#
         epochs=500,
-        iters_per_checkpoint=500,
+        iters_per_checkpoint=250,
         seed=1234,
-        dynamic_loss_scaling=True,
-        fp16_run=False,
+        cudnn_enabled=True,
+        cudnn_benchmark=False,
+
+
+        ignore_layers=['embedding.weight'], # for `warm_start`-ing
+        frozen_layers=["Add-Layers"], # only the module names are required e.g: "encoder." will freeze all parameters INSIDE the encoder recursively
+        unfrozen_layers=["Add-Layers"], #TODO # modules that are unfrozen
+    
+
+        dynamic_loss_scaling=False,
+        fp16_run=False, # requires 20 Series or Better
+        bf16_run=True, # requires Amper GPUS or better # So no Tesla T4
+
+
+        
         distributed_run=False,
         dist_backend="nccl",
         dist_url="tcp://localhost:54321",
-        cudnn_enabled=True,
-        cudnn_benchmark=False,
-        ignore_layers=['embedding.weight'],
 
 
         #==============================#
@@ -84,6 +93,8 @@ def create_hparams(hparams_string=None, verbose=False):
         mel_fmin=0.0,
         mel_fmax=8000.0,
         harm_thresh=0.25,
+        f0_min = 80.0,
+        f0_max = 880.0,
 
         #==============================#
         # Model Parameters             #
@@ -119,12 +130,12 @@ def create_hparams(hparams_string=None, verbose=False):
         postnet_kernel_size=5,
         postnet_n_convolutions=5,
 
-        # Speaker embedding          # TODO: Re-add it from Mellotron
+        # Speaker embedding          # TODO: Train a multi-speaker model And add it back in
+        use_speaker_embedding=False,
         n_speakers=123,              
         speaker_embedding_dim=128,   
 
         # Reference encoder
-        # with_gst=True,
         ref_enc_filters=[32, 32, 64, 64, 128, 128],
         ref_enc_size=[3, 3],
         ref_enc_strides=[2, 2],
@@ -132,8 +143,8 @@ def create_hparams(hparams_string=None, verbose=False):
         ref_enc_gru_size=128,
 
         # Style Token Layer
-        token_embedding_size=256,
-        token_num=10,
+        token_embedding_size=512,
+        token_num=64,
         num_heads=8,
 
         # TP-GST parameters
@@ -147,14 +158,14 @@ def create_hparams(hparams_string=None, verbose=False):
 
         # BERT parameters
         bert_encoder_dim=768,
-        bert_checkpoint_path='bert/rubert_cased_L-12_H-768_A-12_pt/',
+        bert_checkpoint_path='bert/',
         bert_config_path='bert/config.json',
         bert_vocab_path='bert/vocab.txt',
         bert_cased=True,
         bert_pretrained=True,
-        bert_save_in_checkpoint=False,
-        bert_load_from_checkpoint=False,
-        bert_train=False,
+        bert_save_in_checkpoint=True,
+        bert_load_from_checkpoint=True,
+        bert_train=True,
 
         #==============================#
         # Optimization Hyperparameters #
@@ -166,13 +177,13 @@ def create_hparams(hparams_string=None, verbose=False):
         weight_decay=1e-6,
         grad_clip_thresh=1.0,
 
-        batch_size=32,
-        val_batch_size = 16
-        num_workers = 4
-        val_num_workers = 4
+        batch_size=8,
+        val_batch_size=8,
+        num_workers=8,
+        val_num_workers=2,
 
-        pin_worker = False
-        val_pin_worker = False
+        pin_worker = True,
+        val_pin_worker = True,
         mask_padding=True,  # set model's padded outputs to padded values
 
         #==============================#
@@ -181,15 +192,6 @@ def create_hparams(hparams_string=None, verbose=False):
         use_guided_attention = True,
         guided_attention_sigma=0.2,
         guided_attention_weight=1.0,
-
-
     )
-
-    if hparams_string:
-        tf.compat.v1.logging.info('Parsing command line hparams: %s', hparams_string)
-        hparams.parse(hparams_string)
-
-    if verbose:
-        tf.compat.v1.logging.info('Final parsed hparams: %s', hparams.values())
-
+    
     return hparams

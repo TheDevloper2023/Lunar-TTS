@@ -54,12 +54,6 @@ class TPGSTTacotron2:
 
         mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, ref_mel))
         return mel_outputs, mel_outputs_postnet, gate_outputs ,alignments
-    
-    def infer_no_gst(self, text, arpabet = True):
-        # I am lazy, I think there are people who will hack it themselves if they really need it
-        import sys
-        print("infer_no_gst is not available." + "\n" + "Use infer_bert() or infer_ref_audio() for now.")
-        sys.exit(0)
 
     def load_mel(self, path):
             audio, sampling_rate = librosa.core.load(path, sr=self.stft.sampling_rate)

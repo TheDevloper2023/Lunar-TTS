@@ -2,6 +2,7 @@ import os
 import time
 import argparse
 import math
+from numpy import finfo
 
 import torch
 from distributed import apply_gradient_allreduce
@@ -15,9 +16,7 @@ from loss_function import Tacotron2Loss, TPCWLoss, TPSELoss
 from logger import Tacotron2Logger
 from hparams import create_hparams
 from utils import get_alignment_metrics
-from torch.amp import autocast, GradScaler
-
-
+from torch.cuda.amp import autocast, GradScaler
 def reduce_tensor(tensor, n_gpus):
     rt = tensor.clone()
     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
@@ -71,10 +70,10 @@ def prepare_directories_and_logger(output_directory, log_directory, rank):
     return logger
 
 
-def warm_start_model(checkpoint_path, model, ignore_layers, freeze_layers, unfreeze_layers):
+def warm_start_model(checkpoint_path, model, ignore_layers):
     assert os.path.isfile(checkpoint_path)
     print("Warm starting model from checkpoint '{}'".format(checkpoint_path))
-    checkpoint_dict = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+    checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
     model_dict = checkpoint_dict['state_dict']
     if len(ignore_layers) > 0:
         model_dict = {k: v for k, v in model_dict.items()
@@ -83,27 +82,13 @@ def warm_start_model(checkpoint_path, model, ignore_layers, freeze_layers, unfre
         dummy_dict.update(model_dict)
         model_dict = dummy_dict
     model.load_state_dict(model_dict, strict=False)
-
-
-
-    if len(freeze_layers) > 0:
-        for layer, param in list(model.named_parameters()):
-            if any(layer.startswith(module) for module in freeze_layers):
-                param.requires_grad = False
-                print(f"Froze layer {layer}")
-
-    if len(unfreeze_layers) > 0:
-        for layer, param in list(model.named_parameters()):
-            if any(layer.startswith(module) for module in unfreeze_layers):
-                param.requires_grad = True
-                print(f"Unfroze layer {layer}")
     return model
 
 
 def load_checkpoint(checkpoint_path, model, optimizer, loading_bert=False):
     assert os.path.isfile(checkpoint_path)
     print("Loading checkpoint '{}'".format(checkpoint_path))
-    checkpoint_dict = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+    checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
 
     if not loading_bert:
         bert_keys = list()
@@ -121,19 +106,6 @@ def load_checkpoint(checkpoint_path, model, optimizer, loading_bert=False):
     iteration = checkpoint_dict['iteration']
     print("Loaded checkpoint '{}' from iteration {}" .format(
         checkpoint_path, iteration))
-
-    if len(hparams.frozen_layers) > 0:
-        for layer, param in list(model.named_parameters()):
-            if any(layer.startswith(module) for module in hparams.frozen_modules):
-                param.requires_grad = False
-                print(f"Froze layer {layer}")
-
-    if len(hparams.unfrozen_layers) > 0:
-        for layer, param in list(model.named_parameters()):
-            if any(layer.startswith(module) for module in hparams.unfrozen_modules):
-                param.requires_grad = True
-                print(f"Unfroze layer {layer}")
-
     return model, optimizer, learning_rate, iteration
 
 
@@ -197,7 +169,7 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
                 reduced_val_loss = loss.item()
                 reduced_val_loss_taco = taco_loss.item()
             val_loss += reduced_val_loss
-            taco_val_loss += reduced_val_loss_taco
+            taco_val_loss = reduced_val_loss_taco
         val_loss = val_loss / (i + 1)
         taco_val_loss /= (i + 1)
 
@@ -233,19 +205,6 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     rank (int): rank of current gpu
     hparams (object): comma separated list of "name=value" pairs.
     """
-
-    if hparams.fp16_run and torch.cuda.is_available():
-        dtype = torch.float16
-    elif hparams.bf16_run and torch.cuda.is_available() and torch.cuda.is_bf16_supported():
-        dtype = torch.bfloat16
-    else:
-        dtype = torch.float32
-
-
-    if hparams.fp16_run and hparams.bf16_run:
-        assert False, "Are you high or something? You can't set both fp16_run and bf16_run to True. Pick one! Check your hparams."
-
-
     if hparams.distributed_run:
         init_distributed(hparams, n_gpus, rank, group_name)
 
@@ -257,10 +216,10 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate,
                                  weight_decay=hparams.weight_decay)
 
-    
-
-    scaler = GradScaler('cuda', enabled=hparams.fp16_run, init_scale=2**16, growth_interval=100) if hparams.fp16_run else None
-
+    if hparams.fp16_run:
+        from apex import amp
+        model, optimizer = amp.initialize(
+            model, optimizer, opt_level='O2')
 
     if hparams.distributed_run:
         model = apply_gradient_allreduce(model)
@@ -280,7 +239,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     if checkpoint_path is not None:
         if warm_start:
             model = warm_start_model(
-                checkpoint_path, model, hparams.ignore_layers, hparams.frozen_layers, hparams.unfrozen_layers)
+                checkpoint_path, model, hparams.ignore_layers)
         else:
             model, optimizer, _learning_rate, iteration = load_checkpoint(
                 checkpoint_path, model, optimizer, hparams.bert_load_from_checkpoint)
@@ -309,101 +268,47 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = learning_rate
 
-            optimizer.zero_grad(set_to_none=True)
+            model.zero_grad()
             x, y = model.parse_batch(batch)
             text_padded, input_lengths, mel_padded, max_len, output_lengths,raw_text, *_ = x
+            y_pred = model(x)
+            mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output, *_ = y_pred
 
-            with autocast('cuda', enabled=hparams.fp16_run or hparams.bf16_run, dtype=dtype):
-                y_pred = model(x)
-                mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output, *_ = y_pred
+            # TP-GST
+            tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output
 
-                att_metrics = get_alignment_metrics(alignments=alignments, average_across_batch=True, input_lengths=x[1], output_lengths=x[4])
+            loss_tpcw = criterion_tpcw(tpcw_output, scores_gst)
+            loss_tpse = criterion_tpse(tpse_output, embedded_gst)
+            loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
+            tacotron_outputs = (mel_out, mel_out_postnet, gate_out, alignments)
+            loss = criterion(tacotron_outputs, y, input_lengths, output_lengths)
+            loss = loss + loss_tpcw + loss_tpse + loss_tpse_l
 
-                # TP-GST
-                tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output
-
-                loss_tpcw = criterion_tpcw(tpcw_output, scores_gst)
-                loss_tpse = criterion_tpse(tpse_output, embedded_gst)
-                loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
-                tacotron_outputs = (mel_out, mel_out_postnet, gate_out, alignments)
-                loss = criterion(tacotron_outputs, y, input_lengths, output_lengths)
-                taco_loss = loss
-                loss = loss + loss_tpcw + loss_tpse + loss_tpse_l
-
-            
-
-            # Luna's eternal wisdom for the next fool who touches this code:
-            # BF16 doesn't require a GradScaler (unlike fp16) because bfloat16 has basically fp32 dynamic range.
-            # That's why fp32 and bf16 share the exact same .backward() → .step() path.
-            #
-            # If thou darest write:
-            """
-            if hparams.fp16_run or hparams.bf16_run:
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-            """
-            #
-            # Then prepare to face the wrath of Luna.
-            # Thou hast committed a grave sin against the sacred training loop,
-            # shattering the delicate balance of mixed precision,
-            # unleashing chaos and destruction upon the realm of deep learning.
-            # Beware — the training loop is holy ground.
-            # Only the purest of intentions may tread here.
-
-
-            # Uhh since when does she even write code? didn't she just like, write poetry or something? I guess she writes code now. Cool. Just don't let her near the training loop, that's all I'm saying.
-            # TL:DR BF16 doesn't require a GradScaler, it is closer to FP32 than FP16 in dynamic range.
-           
-           
             if hparams.distributed_run:
                 reduced_loss = reduce_tensor(loss.data, n_gpus).item()
             else:
                 reduced_loss = loss.item()
 
             if hparams.fp16_run:
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-            
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
             else:
                 loss.backward()
 
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), hparams.grad_clip_thresh)
-
-            is_overflow = math.isnan(grad_norm) or math.isinf(grad_norm)
-
-            if is_overflow and rank==0:
-                print(f"Gradient overflow detected at iteration {iteration} — skipping step")
-                if hparams.fp16_run:
-                    print(f"scaler factor = {scaler.get_scale():.0f}")
-                    scaler.update()
-                optimizer.zero_grad(set_to_none=True)
-           
-                continue                 
-            
             if hparams.fp16_run:
-                scaler.step(optimizer)
-                scaler.update()
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    amp.master_params(optimizer), hparams.grad_clip_thresh)
+                is_overflow = math.isnan(grad_norm)
             else:
-                optimizer.step()
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), hparams.grad_clip_thresh)
+
+            optimizer.step()
 
             if not is_overflow and rank == 0:
                 duration = time.perf_counter() - start
-                #print("Train loss {} {:.6f} Grad Norm {:.6f} {:.2f}s/it".format(
-                #    iteration, reduced_loss, grad_norm, duration))
-                
-                print("\n" * 2)
-                print(f"----> Step {iteration} Epoch {epoch}")
-                print(f"Total Loss: {reduced_loss:.6f} | Tacotron2 Loss: {taco_loss.item():.6f} | TPSE Loss: {loss_tpse.item():.6f} | TPCW Loss: {loss_tpcw.item():.6f} | TPSE Linear Loss: {loss_tpse_l.item():.6f}")
-                print(f"Attention Score: {att_metrics['max'] - att_metrics['diagonalness']:.6f} | Max Attn: {att_metrics['max']:.6f} | Diagonalness: {att_metrics['diagonalness']:.6f}")
-                print(f"Grad Norm: {grad_norm:.6f}")
-                print(f"Learning Rate: {learning_rate:.6f}")
-                print(f"Duration: {duration:.2f}s/it")
-                if hparams.fp16_run:
-                    print(f"Scaler factor: {scaler.get_scale():.0f}")
-                print("--" * 10 + ">")    
-
-                
+                print("Train loss {} {:.6f} Grad Norm {:.6f} {:.2f}s/it".format(
+                    iteration, reduced_loss, grad_norm, duration))
                 logger.log_training(
                     reduced_loss, grad_norm, learning_rate, duration, iteration)
 
@@ -423,7 +328,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                         output_directory, "best_val_style__taco")
                         save_checkpoint(model, optimizer, learning_rate, iteration,
                                         checkpoint_path, hparams.bert_save_in_checkpoint)
-                    if att_score < best_attsc_loss and hparams.save_best_attsc:
+                    if att_score > best_attsc_loss and hparams.save_best_attsc:
                         best_attsc_loss = att_score
                         checkpoint_path = os.path.join(
                         output_directory, "best_inf_attsc")
@@ -474,7 +379,6 @@ if __name__ == '__main__':
     torch.backends.cudnn.benchmark = hparams.cudnn_benchmark
 
     print("FP16 Run:", hparams.fp16_run)
-    print("BF16 Run:", hparams.bf16_run)
     print("Dynamic Loss Scaling:", hparams.dynamic_loss_scaling)
     print("Distributed Run:", hparams.distributed_run)
     print("cuDNN Enabled:", hparams.cudnn_enabled)

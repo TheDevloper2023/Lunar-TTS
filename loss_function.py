@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from utils import get_mask_from_lengths_alternitive as get_mask_from_lengths # Monke patching goes brrr
+from utils import get_mask_from_lengths
 
 class Tacotron2Loss(nn.Module):
     def __init__(self, hparams):

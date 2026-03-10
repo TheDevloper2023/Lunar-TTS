@@ -50,15 +50,6 @@ class TPCW(nn.Module):
 
         return w_combination
 
-    def inference(self, inputs):
-        """
-        perform inference
-        :param inputs: encoder output shape of (batch_size, max_seq_len, embedding_dim)
-        :return: combination weights tensor shape of (batch_size, token_num)
-        """
-        pass
-
-
 class TPSE(nn.Module):
     """
     Text-Predicting Style Embedding
@@ -113,15 +104,6 @@ class TPSE(nn.Module):
 
         return fc_output
 
-    def inference(self, inputs):
-        """
-        perform inference
-        :param inputs: encoder output shape of (batch_size, max_seq_len, embedding_dim)
-        :return: style token tensor shape of (batch_size, token_dim)
-        """
-        pass
-
-
 class TPSELinear(nn.Module):
     """
     Text-Predicting Style Embedding (without rnn layer)
@@ -165,11 +147,3 @@ class TPSELinear(nn.Module):
         fc_output = self.fc_layers_model(inputs)
 
         return fc_output
-
-    def inference(self, inputs):
-        """
-        perform inference
-        :param inputs: encoder output shape of (batch_size, max_seq_len, embedding_dim)
-        :return: style token tensor shape of (batch_size, token_dim)
-        """
-        pass

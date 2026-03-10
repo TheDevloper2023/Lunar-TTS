@@ -1,6 +1,4 @@
 from math import sqrt
-import numpy as np
-from numpy import finfo
 import torch
 from torch.autograd import Variable
 from torch import nn
@@ -9,7 +7,6 @@ from layers import ConvNorm, LinearNorm
 from utils import to_gpu, get_mask_from_lengths
 from modules import GST
 from transformers import BertModel, BertConfig, BertTokenizer
-from transformers import AutoTokenizer, AutoModel
 from tp_gst import TPCW, TPSE, TPSELinear
 
 drop_rate = 0.5
@@ -17,7 +14,10 @@ drop_rate = 0.5
 def load_model(hparams):
     model = Tacotron2(hparams).cuda()
     if hparams.fp16_run:
-        model.decoder.attention_layer.score_mask_value = finfo('float16').min
+        model.decoder.attention_layer.score_mask_value = torch.finfo(torch.float16).min 
+    
+    if hparams.bf16_run:
+        model.decoder.attention_layer.score_mask_value = torch.finfo(torch.bfloat16).min
 
     return model
 
@@ -71,6 +71,7 @@ class Attention(nn.Module):
 
         processed_query = self.query_layer(query.unsqueeze(1))
         processed_attention_weights = self.location_layer(attention_weights_cat)
+        processed_memory = self.memory_layer(processed_memory)
         energies = self.v(torch.tanh(
             processed_query + processed_attention_weights + processed_memory))
 
@@ -90,10 +91,12 @@ class Attention(nn.Module):
         """
         if attention_weights is None:
             alignment = self.get_alignment_energies(
-                attention_hidden_state, processed_memory, attention_weights_cat)
+                attention_hidden_state, memory, attention_weights_cat)
 
             if mask is not None:
-                alignment.data.masked_fill_(mask, self.score_mask_value)
+                alignment = alignment.masked_fill_(mask, self.score_mask_value)
+            
+            alignment = torch.clamp(alignment, min=-20.0, max=15.0)   # or -20 to 15
 
             attention_weights = F.softmax(alignment, dim=1)
         attention_context = torch.bmm(attention_weights.unsqueeze(1), memory)
@@ -701,7 +704,7 @@ class Tacotron2(nn.Module):
 
         return self.parse_output(
             [mel_outputs, mel_outputs_postnet, gate_outputs, alignments])
-
+        
     def inference_noattention(self, inputs):
         text, style_input, attention_map = inputs
         embedded_inputs = self.embedding(text).transpose(1, 2)

@@ -4,17 +4,11 @@ import torch
 
 
 @torch.jit.script
-def get_mask_from_lengths_alternitive(lengths: torch.Tensor, max_len:int = 0): # Used for the guided attention loss and whatever CookieTTS has that I will copy paste from
+def get_mask_from_lengths(lengths: torch.Tensor, max_len:int = 0): # From CookieTTS, this one's better and more future proof
     if max_len == 0:
         max_len = int(torch.max(lengths).item())
     ids = torch.arange(0, max_len, device=lengths.device, dtype=torch.long)
     mask = (ids < lengths.unsqueeze(1))
-    return mask
-
-def get_mask_from_lengths(lengths): # Used for the original stuff in TT2
-    max_len = torch.max(lengths).item()
-    ids = torch.arange(0, max_len, out=torch.cuda.LongTensor(max_len))
-    mask = (ids < lengths.unsqueeze(1)).bool()
     return mask
 
 

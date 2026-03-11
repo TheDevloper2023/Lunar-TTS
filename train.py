@@ -174,7 +174,7 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
         taco_val_loss = 0.0
         for i, batch in enumerate(val_loader):
             x, y = model.parse_batch(batch)
-            text_padded, input_lengths, mel_padded, max_len, output_lengths ,raw_text, *_ = x
+            text_padded, input_lengths, mel_padded, max_len, output_lengths ,speaker_ids,raw_text, *_ = x
             y_pred = model(x)
             mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output, *_ = y_pred
             # TP-GST
@@ -311,7 +311,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
 
             optimizer.zero_grad(set_to_none=True)
             x, y = model.parse_batch(batch)
-            text_padded, input_lengths, mel_padded, max_len, output_lengths,raw_text, *_ = x
+            text_padded, input_lengths, mel_padded, max_len, output_lengths, speaker_ids ,raw_text, *_ = x
 
             with autocast('cuda', enabled=hparams.fp16_run or hparams.bf16_run, dtype=dtype):
                 y_pred = model(x)

@@ -48,14 +48,14 @@ class TPGSTTacotron2:
     @torch.no_grad()
     def infer_ref_audio(self, text, ref_audio, arpabet = True): #Boring method, who is going to use it?
         arpabet = 1.0 if arpabet else 0.0
-        ref_mel = self.load_mel(ref_audio)
+        ref_mel = self._load_mel(ref_audio)
         sequence = np.array(text_to_sequence(text, ['english_cleaners'], p_arpabet=arpabet))[None, :]
         sequence = torch.from_numpy(sequence).to(device='cuda', dtype=torch.int64)
 
         mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, ref_mel))
         return mel_outputs, mel_outputs_postnet, gate_outputs ,alignments
 
-    def load_mel(self, path):
+    def _load_mel(self, path):
             audio, sampling_rate = librosa.core.load(path, sr=self.stft.sampling_rate)
             audio = torch.from_numpy(audio)
             if sampling_rate != self.hparams.sampling_rate:

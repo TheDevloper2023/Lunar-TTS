@@ -124,13 +124,13 @@ def load_checkpoint(checkpoint_path, model, optimizer, loading_bert=False):
 
     if len(hparams.frozen_layers) > 0:
         for layer, param in list(model.named_parameters()):
-            if any(layer.startswith(module) for module in hparams.frozen_layers):
+            if any(layer.startswith(module) for module in hparams.frozen_modules):
                 param.requires_grad = False
                 print(f"Froze layer {layer}")
 
     if len(hparams.unfrozen_layers) > 0:
         for layer, param in list(model.named_parameters()):
-            if any(layer.startswith(module) for module in hparams.unfrozen_layers):
+            if any(layer.startswith(module) for module in hparams.unfrozen_modules):
                 param.requires_grad = True
                 print(f"Unfroze layer {layer}")
 

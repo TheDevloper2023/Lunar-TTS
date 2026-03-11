@@ -47,7 +47,7 @@ def create_hparams(hparams_string=None, verbose=False):
 
         ignore_layers=['embedding.weight'], # for `warm_start`-ing
         frozen_layers=["Add-Layers"], # only the module names are required e.g: "encoder." will freeze all parameters INSIDE the encoder recursively
-        unfrozen_layers=["Add-Layers"], #TODO # modules that are unfrozen
+        unfrozen_layers=["Add-Layers"], # modules that are unfrozen
     
 
         dynamic_loss_scaling=False,
@@ -130,8 +130,8 @@ def create_hparams(hparams_string=None, verbose=False):
         postnet_kernel_size=5,
         postnet_n_convolutions=5,
 
-        # Speaker embedding          # TODO: Train a multi-speaker model And add it back in
-        use_speaker_embedding=False,
+        # Speaker embedding          # TODO: Train a multi-speaker model once the single speaker model is working well
+        use_speaker_embeddings=False,
         n_speakers=123,              
         speaker_embedding_dim=128,   
 

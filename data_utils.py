@@ -59,7 +59,8 @@ class TextMelLoader(torch.utils.data.Dataset):
         audiopath, text = audiopath_and_text[0], audiopath_and_text[1]
         enc_text = self.get_text(text)  # int_tensor[char_index, ....]
         mel = self.get_mel(audiopath)  # []
-        return (enc_text, mel, text)
+        speaker_id = int(audiopath_and_text[2]) if len(audiopath_and_text) > 2 else 0
+        return (enc_text, mel,speaker_id,text)
 
     def __getitem__(self, index):
         return self.get_data(self.audiopaths_and_text[index])
@@ -106,15 +107,17 @@ class TextMelCollate():
         gate_padded.zero_()
         output_lengths = torch.LongTensor(len(batch))
         raw_text = []
+        speaker_ids = torch.LongTensor(len(batch))
 
         for i in range(len(ids_sorted_decreasing)):
             mel = batch[ids_sorted_decreasing[i]][1]
             mel_padded[i, :, :mel.size(1)] = mel
             gate_padded[i, mel.size(1)-1:] = 1
             output_lengths[i] = mel.size(1)
-            raw_text.append(batch[ids_sorted_decreasing[i]][2])
+            raw_text.append(batch[ids_sorted_decreasing[i]][3])
+            speaker_ids[i] = batch[ids_sorted_decreasing[i]][2]
 
         model_inputs = (text_padded, input_lengths, mel_padded,
-                        gate_padded, output_lengths, raw_text)
+                        gate_padded, output_lengths, speaker_ids ,raw_text)
 
         return model_inputs

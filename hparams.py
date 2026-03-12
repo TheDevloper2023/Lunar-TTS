@@ -1,5 +1,5 @@
 from text.symbols import symbols
-#import tensorflow as tf
+import tensorflow as tf
 
 class HParams(object):
     hparamdict = []
@@ -193,5 +193,13 @@ def create_hparams(hparams_string=None, verbose=False):
         guided_attention_sigma=0.2,
         guided_attention_weight=1.0,
     )
+
+    if hparams_string:
+        tf.compat.v1.logging.info('Parsing command line hparams: %s', hparams_string)
+        hparams.parse(hparams_string)
+
+    if verbose:
+        tf.compat.v1.logging.info('Final parsed hparams: %s', hparams.values())
+
     
     return hparams

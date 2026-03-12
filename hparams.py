@@ -78,8 +78,8 @@ def create_hparams(hparams_string=None, verbose=False):
         training_files='filelists/ljs_audiopaths_text_sid_train_filelist.txt',
         validation_files='filelists/ljs_audiopaths_text_sid_val_filelist.txt',
         text_cleaners=['english_cleaners'],
-        p_arpabet=1.0,
-        cmudict_path=None,
+        p_arpabet=0.5,
+        cmudict_path="data/cmu_dictionary",
 
         #==============================#
         # Audio Parameters             #

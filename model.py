@@ -645,8 +645,8 @@ class Tacotron2(nn.Module):
 
 
         if self.spk_embbed:
-            embedded_speakers = self.speaker_embedding(speaker_ids)[:, None]
-            encoder_outputs += self.spkr_lin(embedded_speakers)
+            embedded_speakers = self.spk_embbed(speaker_ids)[:, None]
+            encoder_outputs += self.spk_lin(embedded_speakers)
 
 
         # Decoder
@@ -677,8 +677,8 @@ class Tacotron2(nn.Module):
         encoder_outputs = torch.cat((embedded_text, embedded_gst), dim=2)
 
         if self.spk_embbed:
-            embedded_speakers = self.speaker_embedding(speaker_ids)[:, None]
-            encoder_outputs += self.spkr_lin(embedded_speakers)
+            embedded_speakers = self.spk_embbed(speaker_ids)[:, None]
+            encoder_outputs += self.spk_lin(embedded_speakers)
 
         mel_outputs, gate_outputs, alignments = self.decoder.inference(encoder_outputs)
 
@@ -733,8 +733,8 @@ class Tacotron2(nn.Module):
         encoder_outputs = torch.cat((embedded_text, embedded_gst), dim=2)
 
         if self.spk_embbed:
-            embedded_speakers = self.speaker_embedding(speaker_ids)[:, None]
-            encoder_outputs += self.spkr_lin(embedded_speakers)
+            embedded_speakers = self.spk_embbed(speaker_ids)[:, None]
+            encoder_outputs += self.spk_lin(embedded_speakers)
 
         mel_outputs, gate_outputs, alignments = self.decoder.inference(encoder_outputs)
 
@@ -761,8 +761,8 @@ class Tacotron2(nn.Module):
         encoder_outputs = torch.cat((embedded_text, embedded_gst), dim=2)
 
         if self.spk_embbed:
-            embedded_speakers = self.speaker_embedding(speaker_ids)[:, None]
-            encoder_outputs += self.spkr_lin(embedded_speakers)
+            embedded_speakers = self.spk_embbed(speaker_ids)[:, None]
+            encoder_outputs += self.spk_lin(embedded_speakers)
 
         mel_outputs, gate_outputs, alignments = self.decoder.inference_noattention(
             encoder_outputs, attention_map)

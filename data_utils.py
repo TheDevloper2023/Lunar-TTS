@@ -5,7 +5,7 @@ import torch.utils.data
 import layers
 from utils import load_wav_to_torch, load_filepaths_and_text
 from text import text_to_sequence, cmudict
-
+import numpy as np
 
 class TextMelLoader(torch.utils.data.Dataset):
     """
@@ -14,7 +14,7 @@ class TextMelLoader(torch.utils.data.Dataset):
         3) computes mel-spectrograms from audio files.
         4) returns encoded text, mel, raw text
     """
-    def __init__(self, audiopaths_and_text, hparams):
+    def __init__(self, audiopaths_and_text, hparams, speaker_ids=None):
         self.audiopaths_and_text = load_filepaths_and_text(audiopaths_and_text)
         self.text_cleaners = hparams.text_cleaners
         self.max_wav_value = hparams.max_wav_value
@@ -31,6 +31,11 @@ class TextMelLoader(torch.utils.data.Dataset):
         self.harm_thresh = hparams.harm_thresh
         self.p_arpabet = hparams.p_arpabet
 
+        self.speaker_ids = speaker_ids
+        if speaker_ids is None:
+            self.speaker_ids = self.create_speaker_lookup_table(
+                self.audiopaths_and_text)
+
         self.cmudict = None
         if hparams.cmudict_path is not None:
             self.cmudict = cmudict.CMUDict(hparams.cmudict_path)
@@ -43,6 +48,17 @@ class TextMelLoader(torch.utils.data.Dataset):
             text_to_sequence(text, self.text_cleaners, self.cmudict, self.p_arpabet))
 
         return text_norm
+
+
+    def create_speaker_lookup_table(self, audiopaths_and_text):
+        speaker_ids = np.sort(np.unique([x[2] for x in audiopaths_and_text]))
+        d = {int(speaker_ids[i]): i for i in range(len(speaker_ids))}
+        return d
+    
+
+    def get_speaker_id(self, speaker_id):
+        return torch.IntTensor([self.speaker_ids[int(speaker_id)]])
+
 
     def get_mel(self, filepath):
         audio, sampling_rate = load_wav_to_torch(filepath)
@@ -118,6 +134,6 @@ class TextMelCollate():
             speaker_ids[i] = batch[ids_sorted_decreasing[i]][2]
 
         model_inputs = (text_padded, input_lengths, mel_padded,
-                        gate_padded, output_lengths, speaker_ids ,raw_text)
+                        gate_padded, output_lengths, speaker_ids , raw_text)
 
         return model_inputs

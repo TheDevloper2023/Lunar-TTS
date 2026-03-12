@@ -7,7 +7,7 @@ from text import text_to_sequence
 import librosa
 from layers import TacotronSTFT
 
-class TPGSTTacotron2:
+class LunarTTS:
     def __init__(self, model_path, hparams, device='cuda'):
         self.device = device
         self.model = load_model(hparams=hparams)
@@ -26,7 +26,7 @@ class TPGSTTacotron2:
         )
     
     @torch.no_grad()
-    def infer_bert(self, text, emo_overwrite_text, arpabet = True, tpgst_mode = "tpse"): # The more sigma, cooler method
+    def infer_bert(self, text, emo_overwrite_text, arpabet = True, tpgst_mode = "tpse", speaker_ids = 0): # The more sigma, cooler method
 
         arpabet = 1.0 if arpabet else 0.0
         emo_overwrite_text = text if emo_overwrite_text is None else emo_overwrite_text
@@ -46,7 +46,7 @@ class TPGSTTacotron2:
         return mel_outputs, mel_outputs_postnet, gate_outputs ,alignments
     
     @torch.no_grad()
-    def infer_ref_audio(self, text, ref_audio, arpabet = True): #Boring method, who is going to use it?
+    def infer_ref_audio(self, text, ref_audio, arpabet = True, speaker_ids = 0): #Boring method, who is going to use it?
         arpabet = 1.0 if arpabet else 0.0
         ref_mel = self.load_mel(ref_audio)
         sequence = np.array(text_to_sequence(text, ['english_cleaners'], p_arpabet=arpabet))[None, :]

@@ -1,5 +1,7 @@
-#Api class for simple use in colab, maybe 41.ai
-## This is half vibecoded half copy pasted from demo.ipynb
+#Api class for simple use in colab.
+## Most of this is copied from Lightbooster's colab 
+
+### Thine rewrote tis because it was unprofesional for my big sis
 from model import load_model
 import numpy as np
 import torch
@@ -24,38 +26,11 @@ class LunarTTS:
             hparams.mel_fmin,
             hparams.mel_fmax
         )
-    
-    @torch.no_grad()
-    def infer_bert(self, text, emo_overwrite_text, arpabet = True, tpgst_mode = "tpse", speaker_ids = 0): # The more sigma, cooler method
-
-        arpabet = 1.0 if arpabet else 0.0
-        emo_overwrite_text = text if emo_overwrite_text is None else emo_overwrite_text
-        availbe_modes = ["tpse", "tpcw", "tpse-linear"]
-
-        if tpgst_mode not in availbe_modes:
-            raise ValueError(f"invalid tpgst_mode {tpgst_mode}, available modes are {availbe_modes}")
 
 
-        sequence = np.array(text_to_sequence(text, ['english_cleaners'], p_arpabet=arpabet))[None, :]
-        sequence = torch.from_numpy(sequence).to(device='cuda', dtype=torch.int64)
-        
-        #predict emotion embedding
-        predicted = self.model.inference((sequence, emo_overwrite_text), tpgst_mode)
-        mel_outputs, mel_outputs_postnet, gate_outputs , alignments = predicted
+        self.hparams = hparams
 
-        return mel_outputs, mel_outputs_postnet, gate_outputs ,alignments
-    
-    @torch.no_grad()
-    def infer_ref_audio(self, text, ref_audio, arpabet = True, speaker_ids = 0): #Boring method, who is going to use it?
-        arpabet = 1.0 if arpabet else 0.0
-        ref_mel = self.load_mel(ref_audio)
-        sequence = np.array(text_to_sequence(text, ['english_cleaners'], p_arpabet=arpabet))[None, :]
-        sequence = torch.from_numpy(sequence).to(device='cuda', dtype=torch.int64)
-
-        mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, ref_mel))
-        return mel_outputs, mel_outputs_postnet, gate_outputs ,alignments
-
-    def load_mel(self, path):
+    def _load_mel(self, path):
             audio, sampling_rate = librosa.core.load(path, sr=self.stft.sampling_rate)
             audio = torch.from_numpy(audio)
             if sampling_rate != self.hparams.sampling_rate:
@@ -66,6 +41,50 @@ class LunarTTS:
             melspec = self.stft.mel_spectrogram(audio_norm)
             melspec = melspec.to(self.device)
             return melspec
+    
+
+
+    def __call__(self, text, emotion=None, arpabet = None, speaker_id=0 ,ref_mode=0 ,reference_audio=None, tpgst_mode="tpse"):
+            arpabet = 1.0 if arpabet else 0.0
+            emotion = text if emotion is None or emotion == "" else emotion
+
+            if ref_mode not in [0,1,2]:
+                raise ValueError(f"invalid infer_mode {ref_mode}, must be either 0 - No style ; 1 - TPGST-BERT ; 2 - Reference Audio")
+
+            tpgst_mode = tpgst_mode.lower()
+            if tpgst_mode not in ["tpse", "tpcw", "tpse-linear"]:
+                  raise ValueError(f"invalid tpgst_mode {tpgst_mode}, must pe TPSE, TPSE-Linear, TPCW")
+
+            sequence = np.array(text_to_sequence(text, ['english_cleaners'], p_arpabet=arpabet))[None, :]
+            sequence = torch.from_numpy(sequence).to(self.device, dtype=torch.int64)
+            
+            speaker_embedding = torch.tensor([speaker_id]).to(self.device)
+
+            if ref_mode == 1: # Ref audio
+                  if reference_audio is None:
+                        raise ValueError("Reference Audio must be included with ref_mode = 1!")
+                  ref_mel = self._load_mel(reference_audio)
+                  mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, ref_mel, speaker_embedding))
+            
+            elif ref_mode == 2: # TPGST 
+                  mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference((sequence, emotion, speaker_embedding), tpgst_mode)
+            
+            elif ref_mode == 0: # No Style
+                  zeros = torch.zeros(sequence.size(0), self.hparams.token_embedding_size).to(self.device)
+                  mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, zeros, speaker_embedding))
+
+            return {
+                  "mel_outputs": mel_outputs,
+                  "mel_outputs_postnet": mel_outputs_postnet,
+                  "gate_outputs": gate_outputs,
+                  "alignments": alignments,
+            }
+    
+
+
+
+                  
+                  
 
 
 

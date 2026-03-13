@@ -44,7 +44,7 @@ class LunarTTS:
     
 
 
-    def __call__(self, text, emotion=None, arpabet = None ,ref_mode=0 ,reference_audio=None, tpgst_mode="tpse"):
+    def __call__(self, text, emotion=None, arpabet = None, speaker_id=0 ,ref_mode=0 ,reference_audio=None, tpgst_mode="tpse"):
             arpabet = 1.0 if arpabet else 0.0
             emotion = text if emotion is None or emotion == "" else emotion
 
@@ -56,20 +56,22 @@ class LunarTTS:
                   raise ValueError(f"invalid tpgst_mode {tpgst_mode}, must pe TPSE, TPSE-Linear, TPCW")
 
             sequence = np.array(text_to_sequence(text, ['english_cleaners'], p_arpabet=arpabet))[None, :]
-            sequence = torch.from_numpy(sequence).to(device='cuda', dtype=torch.int64)
+            sequence = torch.from_numpy(sequence).to(self.device, dtype=torch.int64)
+            
+            speaker_embedding = torch.tensor([speaker_id]).to(self.device)
 
             if ref_mode == 1: # Ref audio
                   if reference_audio is None:
                         raise ValueError("Reference Audio must be included with ref_mode = 1!")
                   ref_mel = self._load_mel(reference_audio)
-                  mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, ref_mel))
+                  mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, ref_mel, speaker_embedding))
             
             elif ref_mode == 2: # TPGST 
-                  mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference((sequence, emotion), tpgst_mode)
+                  mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference((sequence, emotion, speaker_embedding), tpgst_mode)
             
             elif ref_mode == 0: # No Style
                   zeros = torch.zeros(sequence.size(0), self.hparams.token_embedding_size).to(self.device)
-                  mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, zeros))
+                  mel_outputs, mel_outputs_postnet, gate_outputs, alignments = self.model.inference_reference((sequence, zeros, speaker_embedding))
 
             return {
                   "mel_outputs": mel_outputs,

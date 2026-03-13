@@ -550,15 +550,40 @@ class Tacotron2(nn.Module):
                 print('bert created')
                 print('---------------------')
 
+        # speaker embedding
+
+        self.use_speaker_embeddings = hparams.use_speaker_embeddings
+        self.n_speakers = hparams.n_speakers
+        self.speaker_embedding_dim = hparams.speaker_embedding_dim
+
+
+        if not self.use_speaker_embeddings and self.n_speakers > 1:
+            raise ValueError("use_speaker_embeddings is False but n_speakers is greater than 1")
+        
+        if self.use_speaker_embeddings:
+            self.spk_embbed = nn.Embedding(self.n_speakers, self.speaker_embedding_dim)
+        else:
+            self.spk_embbed = None
+        
+        if self.n_speakers > 1:
+            self.spk_lin = nn.Linear(self.speaker_embedding_dim, self.encoder_embedding_dim)
+        else:
+            self.spk_lin = lambda a: torch.zeros(
+                self.encoder_embedding_dim, device=a.device
+            )
+
+
+
     def parse_batch(self, batch):
-        text_padded, input_lengths, mel_padded, gate_padded, output_lengths, raw_text = batch
+        text_padded, input_lengths, mel_padded, gate_padded, output_lengths, speaker_ids ,raw_text = batch
         text_padded = to_gpu(text_padded).long()
         input_lengths = to_gpu(input_lengths).long()
         max_len = torch.max(input_lengths.data).item()
         mel_padded = to_gpu(mel_padded).float()
         gate_padded = to_gpu(gate_padded).float()
         output_lengths = to_gpu(output_lengths).long()
-        return ((text_padded, input_lengths, mel_padded, max_len, output_lengths, raw_text),
+        speaker_ids = to_gpu(speaker_ids).long()
+        return ((text_padded, input_lengths, mel_padded, max_len, output_lengths, speaker_ids ,raw_text),
                 (mel_padded, gate_padded))
 
     def parse_output(self, outputs, output_lengths=None):
@@ -574,7 +599,7 @@ class Tacotron2(nn.Module):
         return outputs
 
     def forward(self, inputs):
-        inputs, input_lengths, targets, max_len, output_lengths, raw_text = inputs
+        inputs, input_lengths, targets, max_len, output_lengths, speaker_ids ,raw_text = inputs
         input_lengths, output_lengths = input_lengths.data, output_lengths.data
 
         # Encoder
@@ -618,6 +643,12 @@ class Tacotron2(nn.Module):
         embedded_gst = embedded_gst.repeat(1, embedded_text.size(1), 1)
         encoder_outputs = torch.cat((embedded_text, embedded_gst), dim=2)
 
+
+        if self.spk_embbed:
+            embedded_speakers = self.spk_embbed(speaker_ids)[:, None]
+            encoder_outputs += self.spk_lin(embedded_speakers)
+
+
         # Decoder
         mel_outputs, gate_outputs, alignments = self.decoder(
             encoder_outputs, targets, memory_lengths=input_lengths)
@@ -630,7 +661,7 @@ class Tacotron2(nn.Module):
             output_lengths)
 
     def inference_reference(self, inputs):
-        text, style_input = inputs
+        text, style_input, speaker_ids = inputs
         embedded_inputs = self.embedding(text).transpose(1, 2)
         embedded_text, _ = self.encoder.inference(embedded_inputs)
 
@@ -645,6 +676,10 @@ class Tacotron2(nn.Module):
         embedded_gst = embedded_gst.repeat(1, embedded_text.size(1), 1)
         encoder_outputs = torch.cat((embedded_text, embedded_gst), dim=2)
 
+        if self.spk_embbed:
+            embedded_speakers = self.spk_embbed(speaker_ids)[:, None]
+            encoder_outputs += self.spk_lin(embedded_speakers)
+
         mel_outputs, gate_outputs, alignments = self.decoder.inference(encoder_outputs)
 
         mel_outputs_postnet = self.postnet(mel_outputs)
@@ -654,7 +689,7 @@ class Tacotron2(nn.Module):
             [mel_outputs, mel_outputs_postnet, gate_outputs, alignments])
 
     def inference(self, inputs, tpgst_model='tpse'):
-        text, raw_text = inputs
+        text, raw_text, speaker_ids = inputs
         embedded_inputs = self.embedding(text).transpose(1, 2)
         embedded_text, hidden_states = self.encoder.inference(embedded_inputs)
 
@@ -697,6 +732,10 @@ class Tacotron2(nn.Module):
         embedded_gst = embedded_gst.repeat(1, embedded_text.size(1), 1)
         encoder_outputs = torch.cat((embedded_text, embedded_gst), dim=2)
 
+        if self.spk_embbed:
+            embedded_speakers = self.spk_embbed(speaker_ids)[:, None]
+            encoder_outputs += self.spk_lin(embedded_speakers)
+
         mel_outputs, gate_outputs, alignments = self.decoder.inference(encoder_outputs)
 
         mel_outputs_postnet = self.postnet(mel_outputs)
@@ -706,7 +745,7 @@ class Tacotron2(nn.Module):
             [mel_outputs, mel_outputs_postnet, gate_outputs, alignments])
         
     def inference_noattention(self, inputs):
-        text, style_input, attention_map = inputs
+        text, style_input, attention_map, speaker_ids = inputs
         embedded_inputs = self.embedding(text).transpose(1, 2)
         embedded_text = self.encoder.inference(embedded_inputs)
 
@@ -720,6 +759,10 @@ class Tacotron2(nn.Module):
 
         embedded_gst = embedded_gst.repeat(1, embedded_text.size(1), 1)
         encoder_outputs = torch.cat((embedded_text, embedded_gst), dim=2)
+
+        if self.spk_embbed:
+            embedded_speakers = self.spk_embbed(speaker_ids)[:, None]
+            encoder_outputs += self.spk_lin(embedded_speakers)
 
         mel_outputs, gate_outputs, alignments = self.decoder.inference_noattention(
             encoder_outputs, attention_map)

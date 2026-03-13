@@ -43,7 +43,7 @@ def init_distributed(hparams, n_gpus, rank, group_name):
 def prepare_dataloaders(hparams):
     # Get data, data loaders and collate function ready
     trainset = TextMelLoader(hparams.training_files, hparams)
-    valset = TextMelLoader(hparams.validation_files, hparams, speaker_ids=trainset.speaker_ids)
+    valset = TextMelLoader(hparams.validation_files, hparams)
     collate_fn = TextMelCollate(hparams.n_frames_per_step)
 
     if hparams.distributed_run:
@@ -124,13 +124,13 @@ def load_checkpoint(checkpoint_path, model, optimizer, loading_bert=False):
 
     if len(hparams.frozen_layers) > 0:
         for layer, param in list(model.named_parameters()):
-            if any(layer.startswith(module) for module in hparams.frozen_layers):
+            if any(layer.startswith(module) for module in hparams.frozen_modules):
                 param.requires_grad = False
                 print(f"Froze layer {layer}")
 
     if len(hparams.unfrozen_layers) > 0:
         for layer, param in list(model.named_parameters()):
-            if any(layer.startswith(module) for module in hparams.unfrozen_layers):
+            if any(layer.startswith(module) for module in hparams.unfrozen_modules):
                 param.requires_grad = True
                 print(f"Unfroze layer {layer}")
 
@@ -174,7 +174,7 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
         taco_val_loss = 0.0
         for i, batch in enumerate(val_loader):
             x, y = model.parse_batch(batch)
-            text_padded, input_lengths, mel_padded, max_len, output_lengths ,speaker_ids,raw_text, *_ = x
+            text_padded, input_lengths, mel_padded, max_len, output_lengths ,raw_text, *_ = x
             y_pred = model(x)
             mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output, *_ = y_pred
             # TP-GST
@@ -311,7 +311,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
 
             optimizer.zero_grad(set_to_none=True)
             x, y = model.parse_batch(batch)
-            text_padded, input_lengths, mel_padded, max_len, output_lengths, speaker_ids ,raw_text, *_ = x
+            text_padded, input_lengths, mel_padded, max_len, output_lengths,raw_text, *_ = x
 
             with autocast('cuda', enabled=hparams.fp16_run or hparams.bf16_run, dtype=dtype):
                 y_pred = model(x)

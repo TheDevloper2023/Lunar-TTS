@@ -1,34 +1,6 @@
 from text.symbols import symbols
 import tensorflow as tf
-
-class HParams(object):
-    hparamdict = []
-    def __init__(self, **hparams):
-        self.hparamdict = hparams
-        for k, v in hparams.items():
-            setattr(self, k, v)
-    def __repr__(self):
-        return "HParams(" + repr([(k, v) for k, v in self.hparamdict.items()]) + ")"
-    def __str__(self):
-        return ','.join([(k + '=' + str(v)) for k, v in self.hparamdict.items()])
-    def parse(self, params):
-        for s in params.split(","):
-            k, v = s.split("=", 1)
-            k = k.strip()
-            t = type(self.hparamdict[k])
-            if t == bool:
-                v = v.strip().lower()
-                if v in ['true', '1']:
-                    v = True
-                elif v in ['false', '0']:
-                    v = False
-                else:
-                    raise ValueError(v)
-            else:
-                v = t(v)
-            self.hparamdict[k] = v
-            setattr(self, k, v)
-        return self
+from utils import HParams
 
 
 def create_hparams(hparams_string=None, verbose=False):
@@ -45,14 +17,14 @@ def create_hparams(hparams_string=None, verbose=False):
         cudnn_benchmark=False,
 
 
-        ignore_layers=['embedding.weight'], # for `warm_start`-ing
+        ignore_layers = ["embedding.weight"], #Warm starting
         frozen_layers=["Add-Layers"], # only the module names are required e.g: "encoder." will freeze all parameters INSIDE the encoder recursively
         unfrozen_layers=["Add-Layers"], # modules that are unfrozen
     
 
         dynamic_loss_scaling=False,
-        fp16_run=False, # requires 20 Series or Better
-        bf16_run=True, # requires Amper GPUS or better # So no Tesla T4
+        fp16_run=True, # requires 20 Series or Better
+        bf16_run=False, # requires Amper GPUS or better # So no Tesla T4
 
 
         
@@ -75,8 +47,8 @@ def create_hparams(hparams_string=None, verbose=False):
         #==============================#
         # Data Parameters             #
         #==============================#
-        training_files='filelists/ljs_audiopaths_text_sid_train_filelist.txt',
-        validation_files='filelists/ljs_audiopaths_text_sid_val_filelist.txt',
+        training_files="filelists/ljs_audiopaths_text_sid_train_filelist.txt",
+        validation_files="filelists/ljs_audiopaths_text_sid_train_filelist.txt",
         text_cleaners=['english_cleaners'],
         p_arpabet=0.5,
         cmudict_path="data/cmu_dictionary",
@@ -85,13 +57,13 @@ def create_hparams(hparams_string=None, verbose=False):
         # Audio Parameters             #
         #==============================#
         max_wav_value=32768.0,
-        sampling_rate=22050,
-        filter_length=1024,
-        hop_length=256,
-        win_length=1024,
+        sampling_rate=44100,
+        filter_length=2048,
+        hop_length=512,
+        win_length=2048,
         n_mel_channels=80,
         mel_fmin=0.0,
-        mel_fmax=8000.0,
+        mel_fmax=16000,
         harm_thresh=0.25,
         f0_min = 80.0,
         f0_max = 880.0,
@@ -130,10 +102,10 @@ def create_hparams(hparams_string=None, verbose=False):
         postnet_kernel_size=5,
         postnet_n_convolutions=5,
 
-        # Speaker embedding          # TODO: Train a multi-speaker model once the single speaker model is working well
-        use_speaker_embeddings=False,
-        n_speakers=123,              
-        speaker_embedding_dim=128,   
+        # Speaker embedding
+        use_speaker_embeddings=True,
+        n_speakers=212,            
+        speaker_embedding_dim=512,   
 
         # Reference encoder
         ref_enc_filters=[32, 32, 64, 64, 128, 128],
@@ -163,15 +135,15 @@ def create_hparams(hparams_string=None, verbose=False):
         bert_vocab_path='bert/vocab.txt',
         bert_cased=True,
         bert_pretrained=True,
-        bert_save_in_checkpoint=True,
-        bert_load_from_checkpoint=True,
+        bert_save_in_checkpoint=False,
+        bert_load_from_checkpoint=False,
         bert_train=True,
 
         #==============================#
         # Optimization Hyperparameters #
         #==============================#
         use_saved_learning_rate=False,
-        learning_rate=1e-3,
+        learning_rate=5e-4,
         learning_rate_min=1e-5,
         learning_rate_anneal=50000,
         weight_decay=1e-6,
@@ -179,11 +151,11 @@ def create_hparams(hparams_string=None, verbose=False):
 
         batch_size=8,
         val_batch_size=8,
-        num_workers=8,
-        val_num_workers=2,
+        num_workers=4,
+        val_num_workers=1,
 
-        pin_worker = True,
-        val_pin_worker = True,
+        pin_worker = False,
+        val_pin_worker = False,
         mask_padding=True,  # set model's padded outputs to padded values
 
         #==============================#

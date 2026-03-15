@@ -75,7 +75,7 @@ class TextMelLoader(torch.utils.data.Dataset):
         audiopath, text = audiopath_and_text[0], audiopath_and_text[1]
         enc_text = self.get_text(text)  # int_tensor[char_index, ....]
         mel = self.get_mel(audiopath)  # []
-        speaker_id = int(audiopath_and_text[2]) if len(audiopath_and_text) > 2 else 0
+        speaker_id = self.speaker_ids[int(audiopath_and_text[2])]
         return (enc_text, mel,speaker_id,text)
 
     def __getitem__(self, index):

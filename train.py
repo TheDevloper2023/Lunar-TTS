@@ -56,7 +56,7 @@ def prepare_dataloaders(hparams):
     train_loader = DataLoader(trainset, num_workers=hparams.num_workers, shuffle=shuffle,
                               sampler=train_sampler,
                               batch_size=hparams.batch_size, pin_memory=hparams.pin_worker,
-                              drop_last=True, collate_fn=collate_fn)
+                              drop_last=True, collate_fn=collate_fn, persistent_workers=True)
     return train_loader, valset, collate_fn, train_sampler
 
 
@@ -98,7 +98,6 @@ def warm_start_model(checkpoint_path, model, ignore_layers, freeze_layers, unfre
                 param.requires_grad = True
                 print(f"Unfroze layer {layer}")
     return model
-
 
 def load_checkpoint(checkpoint_path, model, optimizer, loading_bert=False):
     assert os.path.isfile(checkpoint_path)
@@ -167,7 +166,7 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
         val_sampler = DistributedSampler(valset) if distributed_run else None
         val_loader = DataLoader(valset, sampler=val_sampler, num_workers=hparams.val_num_workers,
                                 shuffle=False, batch_size=batch_size,
-                                pin_memory=hparams.val_pin_worker, collate_fn=collate_fn)
+                                pin_memory=hparams.val_pin_worker, collate_fn=collate_fn, persistent_workers=True)
 
         criterion, criterion_tpcw, criterion_tpse = criterions
         val_loss = 0.0
@@ -180,7 +179,7 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
             # TP-GST
             tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output
 
-            loss_tpcw = criterion_tpcw(tpcw_output, scores_gst)
+            loss_tpcw = criterion_tpcw(tpcw_output, scores_gst) / 100
             loss_tpse = criterion_tpse(tpse_output, embedded_gst)
             loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
 
@@ -255,7 +254,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
     model = load_model(hparams)
     learning_rate = hparams.learning_rate
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate,
-                                 weight_decay=hparams.weight_decay)
+                                 weight_decay=hparams.weight_decay, fused=True)
 
     
 
@@ -322,7 +321,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 # TP-GST
                 tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output
 
-                loss_tpcw = criterion_tpcw(tpcw_output, scores_gst)
+                loss_tpcw = criterion_tpcw(tpcw_output, scores_gst) / 100
                 loss_tpse = criterion_tpse(tpse_output, embedded_gst)
                 loss_tpse_l = criterion_tpse(tpse_linear_output, embedded_gst)
                 tacotron_outputs = (mel_out, mel_out_postnet, gate_out, alignments)
@@ -458,6 +457,8 @@ if __name__ == '__main__':
                         required=False, help='checkpoint path')
     parser.add_argument('--warm_start', action='store_true',
                         help='load model weights only, ignore specified layers')
+    parser.add_argument('--warm_start_force', action='store_true',
+                        help='load model weights only')
     parser.add_argument('--n_gpus', type=int, default=1,
                         required=False, help='number of gpus')
     parser.add_argument('--rank', type=int, default=0,
@@ -481,4 +482,4 @@ if __name__ == '__main__':
     print("cuDNN Benchmark:", hparams.cudnn_benchmark)
 
     train(args.output_directory, args.log_directory, args.checkpoint_path,
-          args.warm_start, args.n_gpus, args.rank, args.group_name, hparams)
+          args.warm_start, args.n_gpus, args.rank, args.group_name,hparams)

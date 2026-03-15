@@ -232,6 +232,10 @@ class Decoder(nn.Module):
         self.p_attention_dropout = hparams.p_attention_dropout
         self.p_decoder_dropout = hparams.p_decoder_dropout
 
+        self.attention_dim = hparams.attention_dim
+        if hparams.use_speaker_embeddings:
+            self.attention_dim += hparams.speaker_embedding_dim
+
         self.prenet = Prenet(
             hparams.n_mel_channels * hparams.n_frames_per_step,
             [hparams.prenet_dim, hparams.prenet_dim])
@@ -242,7 +246,7 @@ class Decoder(nn.Module):
 
         self.attention_layer = Attention(
             hparams.attention_rnn_dim, self.encoder_embedding_dim,
-            hparams.attention_dim, hparams.attention_location_n_filters,
+            self.attention_dim, hparams.attention_location_n_filters,
             hparams.attention_location_kernel_size)
 
         self.decoder_rnn = nn.LSTMCell(
@@ -631,16 +635,16 @@ class Tacotron2(nn.Module):
         embedded_gst, scores_gst = self.gst(targets, output_lengths)
         tp_gst_output = [tpcw_output, tpse_output, tpse_linear_output,
                          embedded_gst.detach().squeeze(1), scores_gst.detach()]  # stop backpropagation to GST
-
-        # New Encoder outputs
-        embedded_gst = embedded_gst.repeat(1, embedded_text.size(1), 1)
-        encoder_outputs = torch.cat((embedded_text, embedded_gst), dim=2)
-
-
+        
         if self.spk_embbed:
             embedded_speakers = self.spk_embbed(speaker_ids)[:, None]
             embedded_speakers = embedded_speakers.repeat(1, embedded_text.size(1), 1)
-            encoder_outputs = torch.cat((encoder_outputs, embedded_speakers), dim=2)
+            embedded_gst = embedded_gst.repeat(1, embedded_text.size(1), 1)
+            encoder_outputs = torch.cat((embedded_text, embedded_gst, embedded_speakers), dim=2)
+        else:
+            # New Encoder outputs
+            embedded_gst = embedded_gst.repeat(1, embedded_text.size(1), 1)
+            encoder_outputs = torch.cat((embedded_text, embedded_gst), dim=2)
 
         # Decoder
         mel_outputs, gate_outputs, alignments = self.decoder(

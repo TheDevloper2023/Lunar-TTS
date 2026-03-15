@@ -14,7 +14,7 @@ from data_utils import TextMelLoader, TextMelCollate
 from loss_function import Tacotron2Loss, TPCWLoss, TPSELoss
 from logger import Tacotron2Logger
 from hparams import create_hparams
-from utils import get_alignment_metrics
+from utils import alignment_metric 
 from torch.amp import autocast, GradScaler
 
 
@@ -206,17 +206,30 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
         logger.log_validation(val_loss, model, y, y_pred, iteration)
     
     
-    att_mat = get_alignment_metrics(alignments=alignments, average_across_batch=True, input_lengths=x[1], output_lengths=x[4])
+    atd = alignment_metric(alignments=alignments, input_lengths=x[1], output_lengths=x[4], enc_min_thresh=0.7, average_across_batch=True)
 
-    avg_max_attn = att_mat["max"]
-    att_diag = att_mat["diagonalness"]
+    diagonality_batch   = atd['diagonalitys']
+    avg_prob_batch      = atd['avg_prob']
+    enc_max_dur_batch   = atd['encoder_max_focus']
+    enc_min_dur_batch   = atd['encoder_min_focus']
+    enc_avg_dur_batch   = atd['encoder_avg_focus']
+    p_missing_enc_batch = atd['p_missing_enc']
 
-    att_score = avg_max_attn - att_diag
+    # Use avg_prob_batch directly
+    weighted_score = avg_prob_batch.item()  # scalar because average_across_batch=True
 
+    # Apply penalties
+    diagonality_punishment = (max(diagonality_batch.item(), 1.10) - 1.10) * 0.5 * 0.5
+    max_dur_punishment      = max(enc_max_dur_batch.item()-60, 0) * 0.005
+    min_dur_punishment      = max(0.0 - enc_min_dur_batch.item(),0) * 0.5
+    avg_dur_punishment      = max(3.6 - enc_avg_dur_batch.item(), 0)
+    mis_dur_punishment      = max(p_missing_enc_batch.item() - 0.08, 0)
+
+    weighted_score -= (diagonality_punishment + max_dur_punishment + min_dur_punishment + avg_dur_punishment + mis_dur_punishment)
 
     style_loss = loss_tpcw + loss_tpse + loss_tpse_l
 
-    return val_loss, att_score, style_loss, taco_val_loss
+    return val_loss, weighted_score, style_loss, taco_val_loss
 
 
 def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
@@ -316,7 +329,27 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 y_pred = model(x)
                 mel_out, mel_out_postnet, gate_out, alignments, tp_gst_output, *_ = y_pred
 
-                att_metrics = get_alignment_metrics(alignments=alignments, average_across_batch=True, input_lengths=x[1], output_lengths=x[4])
+                # Attention metrics
+
+                atd = alignment_metric(alignments=alignments, input_lengths=x[1], output_lengths=x[4], enc_min_thresh=0.7, average_across_batch=True)
+                diagonality_batch   = atd['diagonalitys']
+                avg_prob_batch      = atd['avg_prob']
+                enc_max_dur_batch   = atd['encoder_max_focus']
+                enc_min_dur_batch   = atd['encoder_min_focus']
+                enc_avg_dur_batch   = atd['encoder_avg_focus']
+                p_missing_enc_batch = atd['p_missing_enc']
+
+                # Use avg_prob_batch directly
+                weighted_score = avg_prob_batch.item()  # scalar because average_across_batch=True
+
+                # Apply penalties
+                diagonality_punishment = (max(diagonality_batch.item(), 1.10) - 1.10) * 0.5 * 0.5
+                max_dur_punishment      = max(enc_max_dur_batch.item()-60, 0) * 0.005
+                min_dur_punishment      = max(0.0 - enc_min_dur_batch.item(),0) * 0.5
+                avg_dur_punishment      = max(3.6 - enc_avg_dur_batch.item(), 0)
+                mis_dur_punishment      = max(p_missing_enc_batch.item() - 0.08, 0)
+
+                weighted_score -= (diagonality_punishment + max_dur_punishment + min_dur_punishment + avg_dur_punishment + mis_dur_punishment)
 
                 # TP-GST
                 tpcw_output, tpse_output, tpse_linear_output, embedded_gst, scores_gst = tp_gst_output
@@ -392,15 +425,15 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
                 #    iteration, reduced_loss, grad_norm, duration))
                 
                 print("\n" * 2)
-                print(f"----> Step {iteration} Epoch {epoch}")
+                print(f"---->  / Step: {i} / {len(train_loader)} | Epoch: {epoch} | Global Step: {iteration}")
                 print(f"Total Loss: {reduced_loss:.6f} | Tacotron2 Loss: {taco_loss.item():.6f} | TPSE Loss: {loss_tpse.item():.6f} | TPCW Loss: {loss_tpcw.item():.6f} | TPSE Linear Loss: {loss_tpse_l.item():.6f}")
-                print(f"Attention Score: {att_metrics['max'] - att_metrics['diagonalness']:.6f} | Max Attn: {att_metrics['max']:.6f} | Diagonalness: {att_metrics['diagonalness']:.6f}")
+                print(f"Attention Score: {weighted_score:.6f} | Max Attn (Avg_prob): {avg_prob_batch.mean().item():.6f} | Diagonalness: {diagonality_batch.mean().item():.6f} | Max Focus: {enc_max_dur_batch.item():.6f} | Min Focus: {enc_min_dur_batch.item():.6f}")
                 print(f"Grad Norm: {grad_norm:.6f}")
                 print(f"Learning Rate: {learning_rate:.6f}")
                 print(f"Duration: {duration:.2f}s/it")
                 if hparams.fp16_run:
                     print(f"Scaler factor: {scaler.get_scale():.0f}")
-                print("--" * 10 + ">")    
+                print("-" * 15 + ">")    
 
                 
                 logger.log_training(

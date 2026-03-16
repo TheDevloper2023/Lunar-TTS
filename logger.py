@@ -1,14 +1,16 @@
 import random
 import torch
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from plotting_utils import plot_alignment_to_numpy, plot_spectrogram_to_numpy
 from plotting_utils import plot_gate_outputs_to_numpy
-import numpy as np
+from plotting_utils import mel_to_audio
+from hparams import create_hparams
+
 
 class Tacotron2Logger(SummaryWriter):
     def __init__(self, logdir):
         super(Tacotron2Logger, self).__init__(logdir)
-
+        self.hparams = create_hparams()
     def log_training(self, reduced_loss, grad_norm, learning_rate, duration,
                      iteration):
             self.add_scalar("training.loss", reduced_loss, iteration)
@@ -18,57 +20,42 @@ class Tacotron2Logger(SummaryWriter):
 
     def log_validation(self, reduced_loss, model, y, y_pred, iteration):
         self.add_scalar("validation.loss", reduced_loss, iteration)
-
-        mel_pred, mel_pred_postnet, gate_pred, alignments, _ = y_pred
+        _, mel_outputs, gate_outputs, alignments = y_pred
         mel_targets, gate_targets = y
 
-        # Parameter histograms (safe even early)
+        # plot distribution of parameters
         for tag, value in model.named_parameters():
             tag = tag.replace('.', '/')
             self.add_histogram(tag, value.data.cpu().numpy(), iteration)
 
-        # Optional: Skip images entirely before stable (e.g., iteration 1000)
-        if iteration < 1000:
-            return
-
+        # plot alignment, mel target and predicted, gate target and predicted
         idx = random.randint(0, alignments.size(0) - 1)
-
-        # Ultimate safe plotting function — forces clean float array
-        def safe_mel_plot(mel_tensor):
-            mel = mel_tensor[idx].data.cpu().numpy()
-            # Replace NaN/Inf
-            mel = np.nan_to_num(mel, nan=0.0, posinf=0.0, neginf=0.0)
-            # Clamp to visual range
-            mel = np.clip(mel, -12.0, 4.0)
-            # FORCE float64 dtype to avoid "flexible type" error
-            mel = mel.astype(np.float64)
-            return plot_spectrogram_to_numpy(mel)
-
-        # Alignment (usually clean)
-        align_np = alignments[idx].data.cpu().numpy().T
-        align_np = np.nan_to_num(align_np).astype(np.float64)
-
         self.add_image(
             "alignment",
-            plot_alignment_to_numpy(align_np),
+            plot_alignment_to_numpy(alignments[idx].data.cpu().numpy().T),
             iteration, dataformats='HWC')
-
         self.add_image(
             "mel_target",
-            safe_mel_plot(mel_targets),
+            plot_spectrogram_to_numpy(mel_targets[idx].data.cpu().numpy()),
             iteration, dataformats='HWC')
-
         self.add_image(
             "mel_predicted",
-            safe_mel_plot(mel_pred_postnet),
+            plot_spectrogram_to_numpy(mel_outputs[idx].data.cpu().numpy()),
             iteration, dataformats='HWC')
-
-        # Gate
-        gate_target_np = gate_targets[idx].data.cpu().numpy()
-        gate_pred_sig = torch.sigmoid(gate_pred[idx]).data.cpu().numpy()
-        gate_pred_sig = np.nan_to_num(gate_pred_sig).astype(np.float64)
-
         self.add_image(
             "gate",
-            plot_gate_outputs_to_numpy(gate_target_np, gate_pred_sig),
+            plot_gate_outputs_to_numpy(
+                gate_targets[idx].data.cpu().numpy(),
+                torch.sigmoid(gate_outputs[idx]).data.cpu().numpy()),
             iteration, dataformats='HWC')
+        
+
+        self.add_audio(
+             "audio",
+             mel_to_audio(mel_outputs[idx].detach(), self.hparams),
+             iteration,
+             self.hparams.sampling_rate
+        )
+        
+
+        

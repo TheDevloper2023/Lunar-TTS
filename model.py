@@ -564,7 +564,7 @@ class Tacotron2(nn.Module):
         if not self.use_speaker_embeddings and self.n_speakers > 1:
             raise ValueError("use_speaker_embeddings is False but n_speakers is greater than 1")
         
-        if self.use_speaker_embeddings and self.n_speakers > 1:
+        if self.use_speaker_embeddings:
             self.spk_embbed = nn.Embedding(self.n_speakers, self.speaker_embedding_dim)
         else:
             self.spk_embbed = None

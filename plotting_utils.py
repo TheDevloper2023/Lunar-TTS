@@ -66,7 +66,7 @@ def plot_gate_outputs_to_numpy(gate_targets, gate_outputs):
 
 
 # This is griflim, I kinda vibecoded it but it works at the very least
-def mel_to_audio_torch(mel_spec, hparams):
+def mel_to_audio(mel_spec, hparams):
     with torch.no_grad():
         n_stft = hparams.filter_length // 2 + 1
         

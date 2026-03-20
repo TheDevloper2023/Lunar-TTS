@@ -159,7 +159,7 @@ def save_checkpoint(model, optimizer, learning_rate, iteration, filepath, saving
 
 
 def validate(model, criterions, valset, iteration, batch_size, n_gpus,
-             collate_fn, logger, distributed_run, rank):
+             collate_fn, logger, distributed_run, rank, hparms):
     """Handles all the validation scoring and printing"""
     model.eval()
     with torch.no_grad():
@@ -197,8 +197,6 @@ def validate(model, criterions, valset, iteration, batch_size, n_gpus,
                 reduced_val_loss_taco = taco_loss.item()
             val_loss += reduced_val_loss
             taco_val_loss += reduced_val_loss_taco
-        val_loss = val_loss / (i + 1)
-        taco_val_loss /= (i + 1)
 
     model.train()
     if rank == 0:
@@ -409,7 +407,7 @@ def train(output_directory, log_directory, checkpoint_path, warm_start, n_gpus,
             if not is_overflow and (iteration % hparams.iters_per_checkpoint == 0):
                 val_loss, att_score, style_loss, taco_val_loss = validate(model, (criterion, criterion_tpcw, criterion_tpse), valset, iteration,
                         hparams.val_batch_size, n_gpus, collate_fn, logger,
-                        hparams.distributed_run, rank)
+                        hparams.distributed_run, rank, hparams)
                 if rank == 0:
                     checkpoint_path = os.path.join(
                         output_directory, "checkpoint_{}".format(iteration))
